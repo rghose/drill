@@ -1,5 +1,6 @@
 from datetime import datetime
 import time
+import math
 from collections import defaultdict, Counter
 import matplotlib.pylab as plt
 
@@ -20,49 +21,56 @@ class CommitMapGeneration:
                     file_map[f.filename] += 1
                 else:
                     file_map[f.filename] = 1
-        except Exception as e:
+        except Exception:
             print("problem with modification, ignoring")
         return file_map
 
-    def __init__(self, git_project):
+    def __init__(self, git_project, interval_months=1):
         self.map_authors = defaultdict(Counter)
-        self.authors = set()
+        self.authors = dict()
         self.map_files = defaultdict(Counter)
         self.files = set()
         self.git_project = git_project
+        self.interval_months = interval_months
+
+    def get_hash_integer(self, date):
+        return int(100 * float("{}.{}".format(date.year, 1 + math.floor((date.month-1) / self.interval_months))))
 
     def generate_map_from_commits(self, start, end):
         rm_obj = RepositoryMining(self.git_project, since=start, to=end, only_in_branch='master')
         for commit in rm_obj.traverse_commits():
-            rounded_date = commit.committer_date.replace(microsecond=0, second=0, minute=0, hour=0)
+            date_bucket = self.get_hash_integer(commit.committer_date)
             author_name = commit.author.name.lower()
-            self.map_authors[rounded_date].update({author_name: 1})
+            self.map_authors[date_bucket].update({author_name: 1})
             if author_name not in self.authors:
-                self.authors.add(author_name)
+                self.authors[author_name] = 1
+            else:
+                self.authors[author_name] += 1
             # self.map_files[rounded_date].update(CommitMapGeneration._filemap_from_modifications(commit.modifications))
 
-    def generate_multi_map(self):
-        dates = self.map_authors.keys()
+    def generate_multi_map(self, top=5):
         author_map = dict()
         counter = 1
-        for author in self.authors:
+        sorted_authors = Counter(self.authors).most_common(top)
+        dates = self.map_authors.keys()
+        for author, total_contribs in sorted_authors:
             author_map[author] = dict()
             for date in dates:
                 contribs = 0
                 if author in self.map_authors[date]:
                     contribs = self.map_authors[date][author]
                 author_map[author][date] = contribs
-            plt.plot(dates, author_map[author].values(), str(counter))
+            plt.plot(dates, author_map[author].values())
             counter += 1
-            plt.show()
+        plt.show()
 
 
-gm = CommitMapGeneration(GIT_PROJECT_URL)
+gm = CommitMapGeneration(GIT_PROJECT_URL, interval_months=3)
 ts_start = time.process_time()
 gm.generate_map_from_commits(datetime(2013, 1, 1), datetime(2020, 8, 10))
 print("Time taken : %s" % (time.process_time() - ts_start))
 
-gm.generate_multi_map()
+gm.generate_multi_map(5)
 # metric = CommitsCount(project_url,
 #                    since=datetime(2013, 1, 1),
 #                    to=datetime(2020, 8, 10))
